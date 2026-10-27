@@ -51,3 +51,31 @@ Terraform v1.17.0 で state を消してから試した結果です。
 `terraform_remote_state` は、読み込み先の state ファイルが存在しないと `Unable to find remote state` で失敗します。`defaults` を指定していても、効くのは state はあるが output がまだない場合だけです。循環していると、どちらを先に apply しても相手の state がないので、そのままでは最初の apply ができません。
 
 このサンプルでは `fileexists()` で相手の state ファイルがあるか確認し、ない場合は data source を作らずに 0 から始めるようにしています。
+
+## state を一つにした場合
+
+`single_state` では、同じ「相手の値に 1 を足す」関係を、1 つの state の中にある 2 つのリソースで書いています。
+
+```hcl
+resource "terraform_data" "a" {
+  input = terraform_data.b.output + 1
+}
+
+resource "terraform_data" "b" {
+  input = terraform_data.a.output + 1
+}
+```
+
+state 内の依存関係は Terraform が 1 つのグラフとして組み立てるので、循環は plan の時点でエラーになり、何も作られません。`terraform validate` でも同じエラーが出ます。
+
+```bash
+terraform -chdir=single_state init && terraform -chdir=single_state plan
+```
+
+```
+Error: Cycle:
+  terraform_data.a
+  terraform_data.b
+```
+
+state を分けると、Terraform は別の state への依存を `terraform_remote_state` で読んだ値としてしか扱えません。そのため循環があっても検出されず、apply のたびに差分が出る状態になります。
